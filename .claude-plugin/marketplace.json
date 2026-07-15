@@ -1,0 +1,15 @@
+{
+  "name": "csm-skills",
+  "description": "CSM's Claude Code plugins: dev-workflow (project memory, session handoff, coding rules, clean git workflow, multi-model orchestration).",
+  "owner": {
+    "name": "CSM",
+    "email": "cheeikhmbacke@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "dev-workflow",
+      "source": "./plugins/dev-workflow",
+      "description": "Persistent project memory, session handoff, coding rules, clean git workflow, and multi-model orchestration for Claude Code."
+    }
+  ]
+}
