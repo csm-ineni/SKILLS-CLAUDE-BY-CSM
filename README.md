@@ -17,12 +17,23 @@ Améliore l'expérience de développement avec Claude Code :
 
 ## Installation
 
+Sur n'importe quelle machine, depuis GitHub :
+
 ```bash
-claude plugin marketplace add /Users/ineni/Documents/CHEIKH/CSM/SKILLS-CLAUDE-BY-CSM
+claude plugin marketplace add csm-ineni/SKILLS-CLAUDE-BY-CSM
 claude plugin install dev-workflow@csm-skills --scope user
 ```
 
-(Ou depuis un clone git : `claude plugin marketplace add <url-du-repo>`.)
+(En local, pour développer le plugin : `claude plugin marketplace add /chemin/vers/SKILLS-CLAUDE-BY-CSM` — les modifications du repo sont alors prises en compte à chaque nouvelle session, sans réinstallation.)
+
+## Mise à jour (dans un projet qui utilise le plugin)
+
+```bash
+claude plugin marketplace update csm-skills   # récupère la dernière version du repo GitHub
+claude plugin update dev-workflow@csm-skills  # met à jour le plugin installé
+```
+
+Puis **redémarre la session Claude Code** (les hooks/skills sont chargés au démarrage). Si le marketplace a été ajouté depuis un chemin local, seule la nouvelle session est nécessaire — pas de commande de mise à jour.
 
 Test rapide sans installer :
 
