@@ -14,7 +14,8 @@ cat <<'POLICY'
 - Before researching any library/API/error/codebase question: invoke skill dev-workflow:project-memory (reuse .claude/memory/ entries; save findings after).
 - When writing or refactoring code: invoke skill dev-workflow:coding-rules first.
 - When starting a feature/fix/chore, or committing/pushing/opening a PR: invoke skill dev-workflow:feature-workflow (dedicated branch, Conventional Commits, draft PR, never any Claude/AI attribution).
-- For bulky exploration/research or a well-specified implementation chunk: invoke skill dev-workflow:orchestrate and delegate to the researcher (haiku) / coder (opus) / reviewer (opus) subagents.
+- For bulky exploration/research or a well-specified implementation chunk: invoke skill dev-workflow:orchestrate and delegate to the researcher (haiku) / coder (opus) / reviewer (opus) / browser-tester (sonnet, Playwright) subagents.
+- Before marking a UI-touching PR ready: delegate Playwright browser tests to the browser-tester subagent (sonnet); unit tests alone are not enough for user-facing flows.
 - At every milestone, before compaction, and at session end: invoke skill dev-workflow:session-handoff to update .claude/PROGRESS.md.
 POLICY
 

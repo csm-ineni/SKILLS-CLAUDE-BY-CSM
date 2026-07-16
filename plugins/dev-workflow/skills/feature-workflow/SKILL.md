@@ -40,7 +40,8 @@ PR body structure:
 
 ## Status
 - [ ] implementation
-- [ ] tests
+- [ ] unit tests
+- [ ] browser tests (Playwright) — required if the change touches UI/user-facing flows
 - [ ] review
 ```
 
@@ -48,7 +49,7 @@ Keep pushing to the same branch; the draft PR tracks progress.
 
 ## Marking ready
 
-Only after: tests pass locally, self-review of the full diff done, and — for non-trivial changes — the `reviewer` agent returned **ready**. Then `gh pr ready`.
+Only after: unit tests pass locally; **if the change touches UI, routing, forms, or any user-facing flow** — Playwright browser tests pass too (delegate writing/running them to the `browser-tester` agent, which runs on Sonnet); self-review of the full diff done; and — for non-trivial changes — the `reviewer` agent returned **ready**. Then `gh pr ready`.
 
 ## Stacked PRs (PR chains)
 

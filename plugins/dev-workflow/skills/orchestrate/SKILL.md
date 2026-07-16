@@ -15,6 +15,7 @@ The main session is the conductor: it decomposes, delegates, synthesizes, and de
 | Library/API/doc/web research | `researcher` | haiku |
 | Implementing a well-specified task | `coder` | opus |
 | Reviewing a diff before PR ready | `reviewer` | opus |
+| Browser/E2E tests (Playwright) for UI flows | `browser-tester` | sonnet |
 | Quick single-fact lookup (known file/symbol) | do it directly | — |
 | Decisions, synthesis, user dialogue | never delegate | — |
 

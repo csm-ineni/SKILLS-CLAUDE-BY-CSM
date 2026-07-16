@@ -13,7 +13,8 @@ Améliore l'expérience de développement avec Claude Code :
 | Règles de code non respectées | Skill `coding-rules` (SOLID, DRY, KISS, YAGNI en critères concrets), chargé automatiquement dès que du code s'écrit |
 | Mentions Claude/co-author dans les commits | Triple garde : setting `attribution` vide + instruction dans `feature-workflow` + hook PreToolUse qui **bloque** toute commande `git commit`/`gh pr` contenant une attribution |
 | Workflow git non structuré | Skill `feature-workflow` — branche dédiée `feat/...`, Conventional Commits, draft PR dès le premier commit, ready seulement après revue |
-| Contexte saturé / coûts | Skill `orchestrate` + agents : `researcher` (Haiku, recherche/exploration), `coder` (Opus, implémentation), `reviewer` (Opus, revue) — le modèle principal (Fable/Opus) orchestre |
+| Contexte saturé / coûts | Skill `orchestrate` + agents : `researcher` (Haiku, recherche/exploration), `coder` (Opus, implémentation), `reviewer` (Opus, revue), `browser-tester` (Sonnet, tests navigateur) — le modèle principal (Fable/Opus) orchestre |
+| Flux UI non testés | Agent `browser-tester` (Sonnet) — écrit et exécute des tests **Playwright** ; obligatoires avant de passer en ready toute PR qui touche l'UI |
 
 ## Installation
 
@@ -57,6 +58,7 @@ Crée `.claude/memory/` + `.claude/PROGRESS.md`, applique le setting `attributio
 - **Fin de session / jalon** : dis « handoff » ou laisse Claude déclencher `session-handoff`.
 - **Nouvelle fonctionnalité** : demande la fonctionnalité ; `feature-workflow` impose branche + draft PR.
 - **Grosse exploration/recherche** : `orchestrate` délègue à `researcher` (Haiku) pour préserver le contexte.
+- **Changement UI / flux utilisateur** : l'agent `browser-tester` (Sonnet) écrit et lance les tests Playwright, en plus des tests unitaires.
 - **Avant de passer une PR en ready** : l'agent `reviewer` fait une revue adversariale.
 
 ## Structure
@@ -65,7 +67,7 @@ Crée `.claude/memory/` + `.claude/PROGRESS.md`, applique le setting `attributio
 plugins/dev-workflow/
 ├── .claude-plugin/plugin.json
 ├── skills/          # setup, project-memory, session-handoff, coding-rules, feature-workflow, orchestrate
-├── agents/          # researcher (haiku), coder (opus), reviewer (opus)
+├── agents/          # researcher (haiku), coder (opus), reviewer (opus), browser-tester (sonnet)
 ├── hooks/hooks.json # SessionStart, PreToolUse (garde commit), PreCompact
 └── scripts/         # session-context.sh, guard-commit.sh, precompact-reminder.sh
 ```
