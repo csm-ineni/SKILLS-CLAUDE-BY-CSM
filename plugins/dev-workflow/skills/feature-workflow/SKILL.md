@@ -50,6 +50,13 @@ Keep pushing to the same branch; the draft PR tracks progress.
 
 Only after: tests pass locally, self-review of the full diff done, and — for non-trivial changes — the `reviewer` agent returned **ready**. Then `gh pr ready`.
 
+## Stacked PRs (PR chains)
+
+When PR B is based on PR A's branch (not on the default branch):
+
+1. Merging PR A does **not** move PR B forward. Before merging B, **retarget** it onto the default branch (`gh pr edit <B> --base develop`) and rebase/merge the updated base into B's branch — otherwise B's code merges into a dead branch and never reaches `develop`/`main`.
+2. `MERGED` status ≠ code present in the target branch. After the chain lands, verify **content**, not status: `git log develop --oneline | grep ...` or `git branch --contains <commit> develop` on the actual commits.
+
 ## Red flags
 
 - About to commit on `main` → create the branch first, `git stash` if needed
