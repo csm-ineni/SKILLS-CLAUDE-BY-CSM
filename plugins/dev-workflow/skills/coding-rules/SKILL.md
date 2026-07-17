@@ -21,6 +21,12 @@ user-invocable: false
 - **KISS** — the simplest design that passes the tests wins. No layers "for flexibility".
 - **YAGNI** — build only what the current task needs. No speculative parameters, config, or generalization.
 
+## File size & factoring
+
+- **Keep files short.** Past ~300 lines, look for a split; past ~500, splitting is the default and keeping it whole needs a justification. A file that mixes concerns (UI + data access, routes + business logic, types + implementation) gets split by concern, not by line count.
+- **Always think factoring, and propose it.** While working in a file, if you spot duplication, a hidden shared concept, or a unit doing too much — even outside the current task — **say so**: propose the refactor with a one-line rationale. Apply it if it's small and safe; otherwise let the user decide rather than growing the mess silently.
+- Factor along seams that exist (a concept with a name, a stable boundary), never by arbitrarily cutting a file in half — a bad split is worse than a long file.
+
 ## Hygiene
 
 - Small functions, explicit names (`retryDelayMs`, not `d`); the name states intent so the body doesn't need narration.
@@ -34,3 +40,5 @@ user-invocable: false
 - A function name containing "And" / "Or" / "Manager" / "Util"
 - Adding a boolean parameter to make old code do a second thing
 - Writing a helper before checking whether one exists
+- Appending to a file already several hundred lines long without considering a split
+- Noticing an obvious factoring opportunity and staying silent about it
