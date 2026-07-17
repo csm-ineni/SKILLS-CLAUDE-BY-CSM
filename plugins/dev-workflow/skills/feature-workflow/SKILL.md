@@ -49,7 +49,16 @@ Keep pushing to the same branch; the draft PR tracks progress.
 
 ## Marking ready
 
-Only after: unit tests pass locally; **if the change touches UI, routing, forms, or any user-facing flow** — Playwright browser tests pass too (delegate writing/running them to the `browser-tester` agent, which runs on Sonnet); self-review of the full diff done; and — for non-trivial changes — the `reviewer` agent returned **ready**. Then `gh pr ready`.
+**First, sync with the remote to surface conflicts now, not at merge time:**
+
+```bash
+git pull origin <branch>          # remote edits on the PR branch (GitHub UI, teammate)
+git fetch origin && git merge origin/<base>   # or rebase — update from the PR's base branch
+```
+
+Resolve any conflicts, re-run the tests, push.
+
+Then, only after: unit tests pass locally; **if the change touches UI, routing, forms, or any user-facing flow** — Playwright browser tests pass too (delegate writing/running them to the `browser-tester` agent, which runs on Sonnet); self-review of the full diff done; and — for non-trivial changes — the `reviewer` agent returned **ready**. Then `gh pr ready`.
 
 ## Stacked PRs (PR chains)
 
