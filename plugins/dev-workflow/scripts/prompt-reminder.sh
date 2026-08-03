@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook: attach a one-line standing reminder so the workflow
-# keeps being applied in long sessions and after context compaction.
-# Throttled: emitted at most once every 30 minutes per project, to avoid taxing
-# every prompt and dulling the reminder through repetition.
+# keeps being applied in long sessions. Throttled: emitted at most once every
+# 30 minutes per project, to avoid taxing every prompt and dulling the reminder
+# through repetition. The PreCompact hook clears the stamp so the reminder
+# re-fires on the first prompt after compaction.
+# The stamp lives in the user's cache dir (never in the project working tree),
+# keyed by a hash of the project path so projects don't throttle each other.
 set -u
 
 THROTTLE_SECONDS=1800
-stamp_dir="${CLAUDE_PROJECT_DIR:-/tmp}/.claude"
-stamp_file="$stamp_dir/.dev-workflow-reminder-stamp"
+project="${CLAUDE_PROJECT_DIR:-$PWD}"
+key=$(printf '%s' "$project" | cksum | cut -d' ' -f1)
+stamp_dir="${XDG_CACHE_HOME:-$HOME/.cache}/claude-dev-workflow"
+stamp_file="$stamp_dir/reminder-$key"
 
 now=$(date +%s)
 if [ -f "$stamp_file" ]; then

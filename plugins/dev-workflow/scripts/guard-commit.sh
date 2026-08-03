@@ -8,7 +8,7 @@ input=$(cat)
 
 extract_cmd() {
   if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null
+    printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || true
   elif command -v python3 >/dev/null 2>&1; then
     printf '%s' "$input" | python3 -c '
 import json, sys
@@ -28,12 +28,15 @@ except Exception:
     pass
 ' 2>/dev/null
   else
-    echo "dev-workflow: guard-commit.sh needs jq or python to parse hook input; attribution guard skipped." >&2
     return 1
   fi
 }
 
-cmd=$(extract_cmd) || exit 0
+cmd=$(extract_cmd) || {
+  # exit 1 (non-blocking error) so the warning is surfaced instead of silently allowing.
+  echo "dev-workflow: guard-commit.sh needs jq or python to parse hook input; attribution guard skipped." >&2
+  exit 1
+}
 [ -n "$cmd" ] || exit 0
 
 case "$cmd" in
@@ -49,12 +52,28 @@ if printf '%s' "$cmd" | grep -qiE "$ATTRIB_RE"; then
 fi
 
 # Message supplied via a file (-F/--file/--body-file): scan that file too.
-msg_files=$(printf '%s' "$cmd" | grep -oE '(-F|--file|--body-file)[= ][^ ;|&]+' | sed -E 's/^(-F|--file|--body-file)[= ]//' | tr -d '"'"'" || true)
-for f in $msg_files; do
-  if [ -f "$f" ] && grep -qiE "$ATTRIB_RE" "$f"; then
-    echo "dev-workflow: blocked — the message file '$f' contains Claude attribution (Co-Authored-By, 'Generated with Claude Code', noreply@anthropic.com). Remove it before committing." >&2
-    exit 2
-  fi
-done
+# Handles separated (-F path, --file path), = (--file=path) and attached (-Fpath)
+# forms, and quoted paths containing spaces.
+scan_msg_file() {
+  f=$1
+  # Relative paths resolve against the hook's cwd, not any `cd` inside the
+  # command — also try the project root as a best effort.
+  for candidate in "$f" "${CLAUDE_PROJECT_DIR:-.}/$f"; do
+    if [ -f "$candidate" ] && grep -qiE "$ATTRIB_RE" "$candidate"; then
+      echo "dev-workflow: blocked — the message file '$candidate' contains Claude attribution (Co-Authored-By, 'Generated with Claude Code', noreply@anthropic.com). Remove it before committing." >&2
+      exit 2
+    fi
+  done
+}
+
+printf '%s' "$cmd" \
+  | grep -oE -- '(-F|--file|--body-file)=?[ ]*("[^"]+"|'\''[^'\'']+'\''|[^ ;|&]+)' 2>/dev/null \
+  | sed -E 's/^(-F|--file|--body-file)=?[ ]*//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+  | while IFS= read -r f; do
+      [ -n "$f" ] && scan_msg_file "$f"
+    done
+# The while loop runs in a subshell; propagate a block verdict.
+rc=$?
+[ "$rc" -eq 2 ] && exit 2
 
 exit 0

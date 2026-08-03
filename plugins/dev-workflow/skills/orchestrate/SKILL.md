@@ -15,7 +15,7 @@ The main session is the conductor: it decomposes, delegates, synthesizes, and de
 | Library/API/doc/web research | `researcher` | precise question, library + version, expected answer shape |
 | Implementing a well-specified task | `coder` | full brief (see below) |
 | Reviewing a diff before PR ready | `reviewer` | exact base ref, intent of the change |
-| Browser/E2E tests (Playwright) for UI flows | `browser-tester` | app start command/URL, flows to cover, edge cases |
+| Browser/E2E tests (Playwright) for UI flows | `browser-tester` | app start command/URL, flows to cover, edge cases, whether it may install Playwright |
 | Quick single-fact lookup (known file/symbol) | do it directly | — |
 | Decisions, synthesis, user dialogue | never delegate | — |
 
@@ -37,7 +37,9 @@ If you can't write that brief yet, send the `researcher` first — an under-spec
 
 **`reviewer`** — the exact diff range (`git diff <base>...HEAD` with a real base ref, not "the recent changes") and one sentence on what the change is supposed to do, so it can judge intent vs. implementation.
 
-**`browser-tester`** — how to start the app (command and URL), the list of flows to cover, and the failure/edge cases that matter. Without a flow list it will guess.
+**`browser-tester`** — how to start the app (command and URL), the list of flows to cover, the failure/edge cases that matter, and whether it may install Playwright if missing (otherwise it stops and reports). Without a flow list it will guess.
+
+Delegating exploration to the `researcher` is also the cheap path: it runs on a cost-efficient model, while `coder`/`reviewer` run on an expensive one — burn researcher tokens to save coder tokens.
 
 ## Feedback loop
 
