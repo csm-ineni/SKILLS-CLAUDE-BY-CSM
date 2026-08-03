@@ -68,8 +68,8 @@ plugins/dev-workflow/
 ├── .claude-plugin/plugin.json
 ├── skills/          # setup, project-memory, session-handoff, coding-rules, feature-workflow, orchestrate
 ├── agents/          # researcher (haiku), coder (opus), reviewer (opus), browser-tester (sonnet)
-├── hooks/hooks.json # SessionStart, PreToolUse (garde commit), PreCompact
-└── scripts/         # session-context.sh, guard-commit.sh, precompact-reminder.sh
+├── hooks/hooks.json # SessionStart, UserPromptSubmit, PreToolUse (garde commit), PreCompact
+└── scripts/         # session-context.sh, prompt-reminder.sh, guard-commit.sh, precompact-reminder.sh
 ```
 
 ## Désinstallation
