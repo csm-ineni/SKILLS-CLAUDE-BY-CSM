@@ -53,6 +53,21 @@ check_contains index-lesson    "no-blind-migrate"  "$(cat "$idx")"
 check_contains index-legacy    "Vitest globals"    "$(cat "$idx")"
 check_contains index-has-date  "2026-08-01"        "$(cat "$idx")"
 
+# Hit counts come from .claude/state/lesson-stats.json, never from the frozen
+# `hits:` key still sitting in a lesson's frontmatter.
+check_contains index-hits-zero-without-stats "[L2, 0 hit(s)]" "$(cat "$idx")"
+check_lacks    index-hits-ignores-frontmatter "3 hit(s)"      "$(cat "$idx")"
+
+mkdir -p "$WORK/proj/.claude/state"
+cat > "$WORK/proj/.claude/state/lesson-stats.json" <<'EOF'
+{
+  "no-blind-migrate": {"hits": 7, "overrides": 2, "last_hit": "2026-09-10"},
+  "some-other-lesson": {"hits": 41, "overrides": 0, "last_hit": "2026-09-11"}
+}
+EOF
+run
+check_contains index-hits-from-stats "[L2, 7 hit(s)]" "$(cat "$idx")"
+
 # Deterministic: regenerating twice yields byte-identical output.
 cp "$idx" "$WORK/first.md"
 run

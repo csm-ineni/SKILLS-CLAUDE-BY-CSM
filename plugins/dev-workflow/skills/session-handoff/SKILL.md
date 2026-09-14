@@ -38,6 +38,10 @@ e.g. "implement validateInput() in src/api/handlers.ts per the test in handlers.
 - <traps discovered: flaky test X, don't touch Y, config Z is load-bearing>
 ```
 
+`**Updated:**` is for whoever reads the file — nothing parses it. The SessionStart hook decides
+the file is stale by comparing its modification time to the last commit's date, so a file edited
+without touching that line is still seen as fresh.
+
 ## Rules
 
 - **"Done" means verified.** Never list something as done that wasn't tested/checked.

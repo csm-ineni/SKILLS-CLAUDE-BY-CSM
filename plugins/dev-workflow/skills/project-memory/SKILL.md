@@ -15,6 +15,8 @@ Persistent research cache in `.claude/memory/`. The same question must never be 
 | `decisions.md` | Architectural choices and their rationale | when a choice is made |
 | `lessons/` | Mistakes already paid for, with a trigger that can warn or block | `dev-workflow:learn` |
 
+All three are committed. Their counters are not: the guard keeps lesson `hits`/`overrides`/`last_hit` in `.claude/state/lesson-stats.json`, local and gitignored.
+
 `INDEX.md` is **generated** — run `plugins/dev-workflow/scripts/memory-index.sh` after adding an
 entry, and never edit it by hand. Hand-editing is how a concurrent session's entry gets lost.
 

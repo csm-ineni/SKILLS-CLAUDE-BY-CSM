@@ -15,7 +15,8 @@ Bootstrap the current project for the dev-workflow plugin. Run each step, skippi
    - `.claude/memory/research/.gitkeep`, `.claude/memory/lessons/.gitkeep`
    - `.claude/memory/decisions.md` — seed with `# Architecture Decisions`
    - `.claude/memory/INDEX.md` — generate it: `plugins/dev-workflow/scripts/memory-index.sh`
-   - `.claude/state/progress/`, `.claude/state/sessions/`
+   - `.claude/state/progress/`, `.claude/state/sessions/` — the guard also writes
+     `.claude/state/lesson-stats.json` (lesson counters) there on its own; nothing to create.
    - **Migrate** an existing `.claude/PROGRESS.md`: move it to
      `.claude/state/progress/<current-branch-slug>.md`.
    - Add `.claude/state/` to `.gitignore` — work state is local and per-branch;

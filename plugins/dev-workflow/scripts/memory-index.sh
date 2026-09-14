@@ -19,6 +19,39 @@ fm() { # <file> <key>
     | sed -E "s/^$2:[[:space:]]*//; s/^\"(.*)\"$/\1/"
 }
 
+# Hit counters left the lesson frontmatter: .claude/memory/ is committed, so
+# mutable counters there kept the tree dirty. They now live in
+# .claude/state/lesson-stats.json, one line per slug, which is what lets a
+# single awk pass collect them all.
+TAB=$(printf '\t')
+stats_lines=""
+stats_file=$(dw_lesson_stats_file "$dir")
+if [ -f "$stats_file" ]; then
+  stats_lines=$(awk -v TAB="$TAB" '
+    match($0, /"[^"]*"[[:space:]]*:[[:space:]]*\{/) {
+      slug = substr($0, RSTART + 1); sub(/".*/, "", slug)
+      n = 0
+      if (match($0, /"hits"[[:space:]]*:[[:space:]]*[0-9]+/)) {
+        v = substr($0, RSTART, RLENGTH); sub(/.*[^0-9]/, "", v); n = v + 0
+      }
+      print slug TAB n
+    }' "$stats_file" 2>/dev/null)
+fi
+
+# Absent stats are the normal state of a fresh or freshly cloned project.
+lesson_hits() { # <slug>
+  lh__want=$1
+  while IFS="$TAB" read -r lh__slug lh__n; do
+    if [ "$lh__slug" = "$lh__want" ]; then
+      printf '%s' "$lh__n"
+      return 0
+    fi
+  done <<EOF
+$stats_lines
+EOF
+  printf '0'
+}
+
 DW_INDEX_GUARD="do not edit by hand"
 
 # This script owns INDEX.md, but it may land on a project where someone wrote
@@ -64,7 +97,7 @@ backup_handwritten_index "$mem/INDEX.md"
     base=$(basename "$f")
     rule=$(fm "$f" rule); [ -n "$rule" ] || rule=$(first_heading "$f"); [ -n "$rule" ] || continue
     level=$(fm "$f" level); [ -n "$level" ] || level=1
-    hits=$(fm "$f" hits);   [ -n "$hits" ]  || hits=0
+    hits=$(lesson_hits "${base%.md}")
     echo "- [L$level, ${hits} hit(s)] [$rule](lessons/$base)"
   done | LC_ALL=C sort
 } | dw_atomic_write "$mem/INDEX.md"
