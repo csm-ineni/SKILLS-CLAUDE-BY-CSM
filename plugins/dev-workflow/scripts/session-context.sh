@@ -14,7 +14,6 @@ session_id=$(dw_json_get "$input" session_id 2>/dev/null)
 
 branch=$(git -C "$dir" branch --show-current 2>/dev/null)
 [ -n "$branch" ] || branch="(no branch)"
-slug=$(dw_branch_slug "$dir")
 sessions=$(dw_sessions_dir "$dir")
 progress=$(dw_progress_file "$dir")
 legacy="$dir/.claude/PROGRESS.md"

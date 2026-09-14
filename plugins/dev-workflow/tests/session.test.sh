@@ -51,7 +51,7 @@ run_start sess-four >/dev/null
 
 # --- progress file of the CURRENT branch is injected, others are not ---
 mkdir -p "$REPO/.claude/state/progress"
-printf '# Progress\n**Updated:** 2026-09-14 08:00\n**Branch:** feat/alpha\n\nALPHA-MARKER\n' \
+printf '# Progress\n**Updated:** 2020-01-01 00:00\n**Branch:** feat/alpha\n\nALPHA-MARKER\n' \
   > "$REPO/.claude/state/progress/feat-alpha.md"
 printf '# Progress\nBETA-MARKER\n' > "$REPO/.claude/state/progress/feat-beta.md"
 out=$(run_start sess-five)
