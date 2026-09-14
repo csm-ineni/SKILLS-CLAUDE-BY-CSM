@@ -77,4 +77,19 @@ mkdir -p "$WORK/empty/.claude/memory"
 CLAUDE_PROJECT_DIR="$WORK/empty" bash "$SCRIPTS/memory-index.sh" >/dev/null 2>&1
 check index-empty-exit-zero 0 "$?"
 
+# --- a hand-written index is backed up, loudly, before being replaced ---
+H="$WORK/hand/.claude/memory"
+mkdir -p "$H/research"
+printf '# My notes\nHANDWRITTEN-MARKER\n' > "$H/INDEX.md"
+err=$(CLAUDE_PROJECT_DIR="$WORK/hand" bash "$SCRIPTS/memory-index.sh" 2>&1 >/dev/null)
+check_contains index-backup-content "HANDWRITTEN-MARKER" "$(cat "$H/INDEX.md.bak" 2>/dev/null)"
+check_lacks index-backup-replaced "HANDWRITTEN-MARKER" "$(cat "$H/INDEX.md")"
+check_contains index-backup-announced "INDEX.md.bak" "$err"
+
+# A generated index is overwritten silently: there is nothing to lose.
+rm -f "$H/INDEX.md.bak"
+err=$(CLAUDE_PROJECT_DIR="$WORK/hand" bash "$SCRIPTS/memory-index.sh" 2>&1 >/dev/null)
+[ -e "$H/INDEX.md.bak" ] && { echo "FAIL index-no-backup-when-generated"; fail=1; } || echo "PASS index-no-backup-when-generated"
+check index-no-backup-silent "" "$err"
+
 report memory

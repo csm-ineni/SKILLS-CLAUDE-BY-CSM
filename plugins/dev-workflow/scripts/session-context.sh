@@ -22,6 +22,26 @@ lessons=$(dw_lessons_dir "$dir")
 
 mkdir -p "$sessions" 2>/dev/null || true
 
+# Everything this hook prints is injected verbatim into the model's context, and
+# the files it reads are committed: a clone or a merge is enough to plant text
+# here. Cap what goes in, and make sure nothing can close the wrapping tag.
+DW_INJECT_MAX_LINES=200
+DW_INJECT_MAX_BYTES=8192
+DW_INJECT_MAX_COLS=160
+
+untag() { LC_ALL=C sed -e 's#</*dev-workflow-context>#(dev-workflow tag removed)#g'; }
+
+emit_file() { # <file>
+  head -c "$DW_INJECT_MAX_BYTES" "$1" 2>/dev/null | head -n "$DW_INJECT_MAX_LINES" | untag
+  emit_bytes=$(wc -c < "$1" 2>/dev/null | tr -d ' ')
+  emit_lines=$(wc -l < "$1" 2>/dev/null | tr -d ' ')
+  case "$emit_bytes" in ''|*[!0-9]*) emit_bytes=0 ;; esac
+  case "$emit_lines" in ''|*[!0-9]*) emit_lines=0 ;; esac
+  if [ "$emit_bytes" -gt "$DW_INJECT_MAX_BYTES" ] || [ "$emit_lines" -gt "$DW_INJECT_MAX_LINES" ]; then
+    echo "[truncated to $DW_INJECT_MAX_LINES lines / $DW_INJECT_MAX_BYTES bytes — open the file for the rest]"
+  fi
+}
+
 # --- purge dead sessions, then collect the live ones ---
 same_branch=""
 other_branches=""
@@ -47,9 +67,13 @@ done
 
 # --- register this session ---
 now_iso=$(dw_now_iso); now_epoch=$(dw_now_epoch)
-printf '{\n  "session_id": "%s",\n  "pid": %s,\n  "branch": "%s",\n  "cwd": "%s",\n  "started_at": "%s",\n  "started_at_epoch": %s,\n  "last_seen": "%s",\n  "last_seen_epoch": %s\n}\n' \
-  "$session_id" "$PPID" "$branch" "$dir" "$now_iso" "$now_epoch" "$now_iso" "$now_epoch" \
-  | dw_atomic_write "$sessions/$session_id.json" 2>/dev/null || true
+# An id that cannot be a file name is not worth a registry entry: skip it and
+# carry on, the collision warning is a convenience, not a prerequisite.
+if dw_safe_id "$session_id"; then
+  printf '{\n  "session_id": "%s",\n  "pid": %s,\n  "branch": "%s",\n  "cwd": "%s",\n  "started_at": "%s",\n  "started_at_epoch": %s,\n  "last_seen": "%s",\n  "last_seen_epoch": %s\n}\n' \
+    "$session_id" "$PPID" "$branch" "$dir" "$now_iso" "$now_epoch" "$now_iso" "$now_epoch" \
+    | dw_atomic_write "$sessions/$session_id.json" 2>/dev/null || true
+fi
 
 echo "<dev-workflow-context>"
 cat <<'POLICY'
@@ -80,26 +104,32 @@ progress_shown=""
 if [ -f "$progress" ]; then
   echo ""
   echo "== Session progress ($progress) — resume from here instead of re-exploring =="
-  cat "$progress"
+  emit_file "$progress"
   progress_shown="$progress"
 elif [ -f "$legacy" ]; then
   echo ""
   echo "== Session progress (.claude/PROGRESS.md, LEGACY PATH) — resume from here instead of re-exploring =="
-  cat "$legacy"
+  emit_file "$legacy"
   echo ""
   echo "NOTE: progress files are now per-branch under .claude/state/progress/. Run /dev-workflow:setup once to migrate this file."
   progress_shown="$legacy"
 fi
 
-# --- staleness: commits landed after the progress file was last updated ---
+# --- staleness: the file's own mtime against the last commit ---
+# Parsing the "**Updated:**" prose was minute-precision and silently disabled
+# itself on anything git could not parse. The file system already knows.
 if [ -n "$progress_shown" ] && git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
-  updated=$(grep -m1 '^\*\*Updated:\*\*' "$progress_shown" 2>/dev/null | sed -E 's/^\*\*Updated:\*\*[[:space:]]*//')
-  if [ -n "$updated" ]; then
-    behind=$(git -C "$dir" rev-list --count --since="$updated" HEAD 2>/dev/null)
-    case "$behind" in ''|*[!0-9]*) behind=0 ;; esac
-    if [ "$behind" -gt 0 ]; then
-      echo ""
-      echo "== This progress file may be out of date: $behind commit(s) landed on $branch after $updated. Verify before resuming. =="
+  written=$(dw_file_mtime "$progress_shown") || written=""
+  last_commit=$(git -C "$dir" log -1 --format=%ct 2>/dev/null)
+  case "$last_commit" in ''|*[!0-9]*) last_commit="" ;; esac
+  if [ -n "$written" ] && [ -n "$last_commit" ] && [ "$last_commit" -gt "$written" ]; then
+    behind=$(git -C "$dir" rev-list --count --since="@$written" HEAD 2>/dev/null)
+    case "$behind" in ''|0|*[!0-9]*) landed="commits have landed" ;; *) landed="$behind commit(s) have landed" ;; esac
+    echo ""
+    if [ "$progress_shown" = "$legacy" ]; then
+      echo "== This progress file may be out of date: $landed since it was last written. .claude/PROGRESS.md is not tied to any branch, so it may describe other work entirely. Verify before resuming. =="
+    else
+      echo "== This progress file may be out of date: $landed on $branch since it was last written. Verify before resuming. =="
     fi
   fi
 fi
@@ -107,7 +137,7 @@ fi
 if [ -f "$index" ]; then
   echo ""
   echo "== Project memory index (.claude/memory/INDEX.md) — check for an existing entry before any new research =="
-  cat "$index"
+  emit_file "$index"
 fi
 
 if [ -d "$lessons" ]; then
@@ -116,7 +146,7 @@ if [ -d "$lessons" ]; then
     total=$(printf '%s\n' "$titles" | wc -l | tr -d ' ')
     echo ""
     echo "== Lessons learned ($total) — do not repeat these; the full text is injected when it becomes relevant =="
-    printf '%s\n' "$titles" | head -15 | sed 's/^/- /'
+    printf '%s\n' "$titles" | head -15 | cut -c1-"$DW_INJECT_MAX_COLS" | untag | sed 's/^/- /'
     [ "$total" -gt 15 ] && echo "- (+$((total - 15)) more in .claude/memory/lessons/)"
   fi
 fi

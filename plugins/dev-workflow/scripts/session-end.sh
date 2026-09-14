@@ -13,7 +13,7 @@ dir="${CLAUDE_PROJECT_DIR:-$PWD}"
 session_id=$(dw_json_get "$input" session_id 2>/dev/null)
 
 [ -n "$session_id" ] || exit 0
-case "$session_id" in */*|..|.) exit 0 ;; esac   # never let an id escape the directory
+dw_safe_id "$session_id" || exit 0   # never let an id escape the sessions directory
 
 rm -f "$(dw_sessions_dir "$dir")/$session_id.json" 2>/dev/null || true
 exit 0
