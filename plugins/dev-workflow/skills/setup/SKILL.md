@@ -11,15 +11,15 @@ Bootstrap the current project for the dev-workflow plugin. Run each step, skippi
 
 ## Steps
 
-1. **Create the memory structure** (skip existing files):
-   - `.claude/memory/INDEX.md` — seed with:
-     ```markdown
-     # Project Memory Index
-     One line per entry: - [topic](research/<file>.md) — one-line answer (YYYY-MM-DD)
-     ```
-   - `.claude/memory/research/` (empty directory, add `.gitkeep`)
-   - `.claude/memory/decisions.md` — seed with a `# Architecture Decisions` heading
-   - `.claude/PROGRESS.md` — seed with the template from the `session-handoff` skill
+1. **Create the memory and state structure** (skip anything that already exists):
+   - `.claude/memory/research/.gitkeep`, `.claude/memory/lessons/.gitkeep`
+   - `.claude/memory/decisions.md` — seed with `# Architecture Decisions`
+   - `.claude/memory/INDEX.md` — generate it: `plugins/dev-workflow/scripts/memory-index.sh`
+   - `.claude/state/progress/`, `.claude/state/sessions/`
+   - **Migrate** an existing `.claude/PROGRESS.md`: move it to
+     `.claude/state/progress/<current-branch-slug>.md`.
+   - Add `.claude/state/` to `.gitignore` — work state is local and per-branch;
+     `.claude/memory/` stays committed, lessons included.
 
 2. **Disable Claude attribution globally.** Read `~/.claude/settings.json`; if the `attribution` key is missing, ask the user for permission, then merge in:
    ```json
@@ -29,6 +29,6 @@ Bootstrap the current project for the dev-workflow plugin. Run each step, skippi
 
 3. **Check GitHub CLI**: run `gh auth status`. If not authenticated, tell the user to run `! gh auth login` (needed for the draft-PR workflow).
 
-4. **Ask the user** whether `.claude/memory/` and `.claude/PROGRESS.md` should be committed (team-shared) or gitignored (personal). Apply their choice to `.gitignore`.
+4. **Ask the user only about `.claude/memory/`**: research, decisions and lessons are committed by default (a lesson the team cannot see is a lesson relearned) — ask whether this project prefers them gitignored instead. `.claude/state/` is always local; it is not a question.
 
 5. **Report** what was created, what was skipped, and any missing prerequisites.

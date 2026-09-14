@@ -23,6 +23,10 @@ The main session is the conductor: it decomposes, delegates, synthesizes, and de
 
 A subagent sees **none** of this conversation: not the files you've read, not the user's phrasing, not other agents' results. Everything it needs must be in the brief — absolute paths, exact git refs, decisions already made, constraints already agreed with the user. If a second agent needs a first agent's findings, paste the relevant conclusions into its brief yourself.
 
+They also start without the lessons this project has already paid for. `coder` and `reviewer`
+read `.claude/memory/lessons/` themselves; for the others, paste any relevant lesson into the
+brief — `lesson-guard.sh` protects tool calls, not reasoning.
+
 ## Briefs
 
 **`researcher`** — the precise question; where to look (paths, or library + version for doc research); the shape of the answer you need (a file list? a yes/no with evidence? an API signature?).
