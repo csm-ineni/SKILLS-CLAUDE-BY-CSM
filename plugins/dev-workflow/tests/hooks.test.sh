@@ -9,12 +9,9 @@ SCRIPTS="$(cd "$(dirname "$0")/../scripts" && pwd)"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-ATTRIB="Co-Authored"-"By: Claude <noreply@"anthropic".com>"
-fail=0
+. "$(dirname "$0")/lib.sh"
 
-check() { # name expected actual
-  if [ "$2" = "$3" ]; then echo "PASS $1"; else echo "FAIL $1 expected=$2 got=$3"; fail=1; fi
-}
+ATTRIB="Co-Authored"-"By: Claude <noreply@"anthropic".com>"
 
 guard() { # json -> exit code
   printf '%s' "$1" | bash "$SCRIPTS/guard-commit.sh" >/dev/null 2>&1
@@ -69,5 +66,4 @@ bash "$SCRIPTS/precompact-reminder.sh" >/dev/null
 out4=$(bash "$SCRIPTS/prompt-reminder.sh")
 [ -n "$out4" ] && echo "PASS reminder-after-compaction" || { echo "FAIL reminder-after-compaction"; fail=1; }
 
-[ "$fail" -eq 0 ] && echo "ALL TESTS PASSED" || echo "SOME TESTS FAILED"
-exit $fail
+report hooks
