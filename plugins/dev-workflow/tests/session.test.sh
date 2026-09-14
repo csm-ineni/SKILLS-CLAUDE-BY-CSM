@@ -91,4 +91,44 @@ check bare-exit-zero 0 "$?"
 printf 'not json' | CLAUDE_PROJECT_DIR="$REPO" bash "$SCRIPTS/session-context.sh" >/dev/null 2>&1
 check malformed-exit-zero 0 "$?"
 
+# --- session-end.sh removes the registry entry ---
+bash -n "$SCRIPTS/session-end.sh" || fail=1
+run_start sess-end >/dev/null
+[ -f "$REPO/.claude/state/sessions/sess-end.json" ] || { echo "FAIL end-precondition"; fail=1; }
+printf '{"session_id":"sess-end","cwd":"%s","reason":"clear"}' "$REPO" \
+  | CLAUDE_PROJECT_DIR="$REPO" bash "$SCRIPTS/session-end.sh" >/dev/null 2>&1
+[ -f "$REPO/.claude/state/sessions/sess-end.json" ] && { echo "FAIL end-removed"; fail=1; } || echo "PASS end-removed"
+
+# it must not touch other sessions
+run_start sess-keep >/dev/null
+printf '{"session_id":"sess-end","cwd":"%s","reason":"clear"}' "$REPO" \
+  | CLAUDE_PROJECT_DIR="$REPO" bash "$SCRIPTS/session-end.sh" >/dev/null 2>&1
+[ -f "$REPO/.claude/state/sessions/sess-keep.json" ] && echo "PASS end-keeps-others" || { echo "FAIL end-keeps-others"; fail=1; }
+
+# unknown session id is a no-op, never an error
+printf '{"session_id":"never-existed","cwd":"%s","reason":"other"}' "$REPO" \
+  | CLAUDE_PROJECT_DIR="$REPO" bash "$SCRIPTS/session-end.sh" >/dev/null 2>&1
+check end-unknown-exit-zero 0 "$?"
+
+# --- heartbeat: prompt-reminder refreshes last_seen ---
+export XDG_CACHE_HOME="$WORK/cache"
+run_start sess-beat >/dev/null
+before=$(grep -o '"last_seen_epoch": [0-9]*' "$REPO/.claude/state/sessions/sess-beat.json" | grep -o '[0-9]*')
+sleep 1
+printf '{"session_id":"sess-beat","cwd":"%s","prompt":"hello"}' "$REPO" \
+  | CLAUDE_PROJECT_DIR="$REPO" bash "$SCRIPTS/prompt-reminder.sh" >/dev/null 2>&1
+after=$(grep -o '"last_seen_epoch": [0-9]*' "$REPO/.claude/state/sessions/sess-beat.json" | grep -o '[0-9]*')
+[ "$after" -gt "$before" ] && echo "PASS heartbeat-refreshed" || { echo "FAIL heartbeat-refreshed before=$before after=$after"; fail=1; }
+
+# --- throttle is keyed per branch, not per project ---
+rm -rf "$WORK/cache"
+o1=$(printf '{"session_id":"s","cwd":"%s","prompt":"x"}' "$REPO" | CLAUDE_PROJECT_DIR="$REPO" bash "$SCRIPTS/prompt-reminder.sh" 2>/dev/null)
+o2=$(printf '{"session_id":"s","cwd":"%s","prompt":"x"}' "$REPO" | CLAUDE_PROJECT_DIR="$REPO" bash "$SCRIPTS/prompt-reminder.sh" 2>/dev/null)
+[ -n "$o1" ] && echo "PASS throttle-first" || { echo "FAIL throttle-first"; fail=1; }
+[ -z "$o2" ] && echo "PASS throttle-second" || { echo "FAIL throttle-second"; fail=1; }
+git -C "$REPO" checkout -q -b feat/gamma
+o3=$(printf '{"session_id":"s","cwd":"%s","prompt":"x"}' "$REPO" | CLAUDE_PROJECT_DIR="$REPO" bash "$SCRIPTS/prompt-reminder.sh" 2>/dev/null)
+[ -n "$o3" ] && echo "PASS throttle-per-branch" || { echo "FAIL throttle-per-branch"; fail=1; }
+git -C "$REPO" checkout -q feat/alpha
+
 report session

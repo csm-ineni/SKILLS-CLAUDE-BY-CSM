@@ -46,7 +46,7 @@ check file-clean         0 "$(guard "{\"tool_input\":{\"command\":\"git commit -
 # --- prompt-reminder.sh throttle (isolated cache + project) ---
 export XDG_CACHE_HOME="$WORK/cache" CLAUDE_PROJECT_DIR="$WORK/projA"
 mkdir -p "$CLAUDE_PROJECT_DIR"
-out1=$(bash "$SCRIPTS/prompt-reminder.sh"); out2=$(bash "$SCRIPTS/prompt-reminder.sh")
+out1=$(bash "$SCRIPTS/prompt-reminder.sh" </dev/null); out2=$(bash "$SCRIPTS/prompt-reminder.sh" </dev/null)
 [ -n "$out1" ] && echo "PASS reminder-first-emits"     || { echo "FAIL reminder-first-emits"; fail=1; }
 [ -z "$out2" ] && echo "PASS reminder-second-throttled" || { echo "FAIL reminder-second-throttled"; fail=1; }
 
@@ -58,12 +58,12 @@ else
 fi
 
 # another project is not throttled by projA's stamp
-out3=$(CLAUDE_PROJECT_DIR="$WORK/projB" bash "$SCRIPTS/prompt-reminder.sh")
+out3=$(CLAUDE_PROJECT_DIR="$WORK/projB" bash "$SCRIPTS/prompt-reminder.sh" </dev/null)
 [ -n "$out3" ] && echo "PASS reminder-per-project" || { echo "FAIL reminder-per-project"; fail=1; }
 
 # precompact clears the stamp -> reminder re-fires
 bash "$SCRIPTS/precompact-reminder.sh" >/dev/null
-out4=$(bash "$SCRIPTS/prompt-reminder.sh")
+out4=$(bash "$SCRIPTS/prompt-reminder.sh" </dev/null)
 [ -n "$out4" ] && echo "PASS reminder-after-compaction" || { echo "FAIL reminder-after-compaction"; fail=1; }
 
 report hooks
