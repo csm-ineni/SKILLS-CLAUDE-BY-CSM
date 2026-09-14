@@ -57,6 +57,9 @@ dw_state_dir()    { printf '%s/.claude/state' "${1:-${CLAUDE_PROJECT_DIR:-$PWD}}
 dw_sessions_dir() { printf '%s/sessions' "$(dw_state_dir "${1:-}")"; }
 dw_lessons_dir()  { printf '%s/.claude/memory/lessons' "${1:-${CLAUDE_PROJECT_DIR:-$PWD}}"; }
 dw_lesson_stats_file() { printf '%s/lesson-stats.json' "$(dw_state_dir "${1:-}")"; }
+# One-shot sentinel: the only override channel a hook can be given from inside a
+# session, since a hook never inherits the environment of a Bash tool call.
+dw_override_file() { printf '%s/override' "$(dw_state_dir "${1:-}")"; }
 
 # The single guard for any identifier that a hook turns into a path. Hooks
 # receive their session id from stdin, so it is untrusted input.
@@ -91,6 +94,9 @@ dw_progress_file() { # [dir]
 
 dw_atomic_write() { # <dest>, content on stdin
   dw__dest=$1
+  # mv would drop the temporary file *inside* a directory destination and report
+  # success, leaving the caller believing it wrote what it never wrote.
+  [ -d "$dw__dest" ] && return 1
   dw__dir=$(dirname "$dw__dest")
   mkdir -p "$dw__dir" 2>/dev/null || return 1
   dw__tmp=$(mktemp "$dw__dir/.dw.XXXXXX") || return 1

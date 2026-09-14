@@ -29,6 +29,23 @@ case "$tool" in
 esac
 [ -n "$subject" ] || exit 0
 
+# The one-shot override sentinel is the only channel a session can reach for
+# Edit/Write, so writing it must never be what a lesson blocks: that would be a
+# dead end with no way out at all.
+override_file=$(dw_override_file "$dir")
+case "$tool" in
+  Edit|Write)
+    case "$subject" in
+      "$override_file"|*/.claude/state/override|.claude/state/override) exit 0 ;;
+    esac
+    ;;
+esac
+
+# Lesson files are committed, so their text is as untrusted as any other injected
+# content: the same caps as the SessionStart hook apply to what is printed here.
+DW_INJECT_MAX_COLS=160
+DW_INJECT_MAX_BYTES=8192
+
 shopt -s nullglob
 files=("$lessons"/*.md)
 [ "${#files[@]}" -gt 0 ] || exit 0
@@ -44,6 +61,7 @@ TAB=$(printf '\t')
 
 PARSE_AWK='
 function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+function clip(s) { if (length(s) > MAXCOLS) s = substr(s, 1, MAXCOLS) " [truncated]"; return s }
 function unquote(s) {
   if (s ~ /^".*"$/ || s ~ /^\047.*\047$/) s = substr(s, 2, length(s) - 2)
   return s
@@ -67,7 +85,12 @@ function flush(   i, n, parts, t, ok) {
   }
   n = split(tools, parts, ","); ok = 0
   for (i = 1; i <= n; i++) { t = parts[i]; gsub(/[[:space:]]/, "", t); if (t == tool) ok = 1 }
-  if (ok) { idx++; emit("L", idx, slug, level, pattern, rule, why, body) }
+  if (ok) {
+    # \s, \b, \w and \d are GNU grep extensions; the matching below is POSIX
+    # ERE, which reads them as literals. Silence there is the real defect.
+    if (pattern ~ /\\[sbwdSBWD]/) emit("G", 0, slug, "", pattern, "", "", "")
+    idx++; emit("L", idx, slug, level, pattern, clip(rule), clip(why), body)
+  }
   reset()
 }
 FNR == 1 {
@@ -91,7 +114,7 @@ infm == 1 {
 }
 closed == 1 {
   if ($0 ~ /^[[:space:]]*$/) next
-  if (nbody < 5) { body = (nbody ? body NLS : "") $0; nbody++ }
+  if (nbody < 5 && length(body) < MAXBYTES) { body = (nbody ? body NLS : "") clip($0); nbody++ }
 }
 END { flush() }
 '
@@ -104,7 +127,9 @@ $1 == "L" && ($2 + 0) >= start { print "S" $2; fflush(); if (subject ~ $5) print
 END { print "DONE" }
 '
 
-parsed=$(awk -v SEP="$SEP" -v NLS="$NLS" -v tool="$tool" "$PARSE_AWK" "${files[@]}" 2>/dev/null) || exit 0
+parsed=$(awk -v SEP="$SEP" -v NLS="$NLS" -v tool="$tool" \
+  -v MAXCOLS="$DW_INJECT_MAX_COLS" -v MAXBYTES="$DW_INJECT_MAX_BYTES" \
+  "$PARSE_AWK" "${files[@]}" 2>/dev/null) || exit 0
 
 recs=()
 nrecs=0
@@ -119,6 +144,10 @@ while IFS= read -r line; do
     "W"*)
       IFS="$SEP" read -r _ _ wslug _ _ wmsg _ _ <<<"$line"
       echo "dev-workflow: lesson '$wslug' is not enforced — $wmsg" >&2
+      ;;
+    "G"*)
+      IFS="$SEP" read -r _ _ gslug _ gpattern _ _ _ <<<"$line"
+      echo "dev-workflow: lesson '$gslug' pattern '${gpattern:0:$DW_INJECT_MAX_COLS}' uses a GNU-only escape (\\s, \\b, \\w, \\d); patterns are POSIX ERE here and those match a literal letter. Use [[:space:]], [[:alnum:]_] or [0-9] instead." >&2
       ;;
   esac
 done <<<"$parsed"
@@ -142,16 +171,27 @@ while [ "$start" -gt 0 ] && [ "$start" -le "$nrecs" ]; do
   # awk died on record $last: its `pattern` is not a valid regex.
   [ "$last" -ge "$start" ] || break
   IFS="$SEP" read -r _ _ bslug _ bpattern _ _ _ <<<"${recs[$last]}"
-  echo "dev-workflow: lesson '$bslug' is not enforced — pattern '$bpattern' is not a valid regex." >&2
+  echo "dev-workflow: lesson '$bslug' is not enforced — pattern '${bpattern:0:$DW_INJECT_MAX_COLS}' is not a valid regex." >&2
   start=$((last + 1))
 done
 [ -n "$matched" ] || exit 0
 
-# An override is honoured through two channels: an explicit prefix on a Bash
-# command (visible in the transcript) and the DW_OVERRIDE environment variable,
-# which is the only one available for Edit/Write — there is no command to prefix.
+# Three channels. The DW_OVERRIDE variable only works when it is set in the
+# environment of the Claude Code process itself: a hook is spawned by that
+# process, never by the shell of a Bash tool call, so nothing done inside a
+# session can reach it. The sentinel file is the channel a session can actually
+# use, and it is consumed by the first block it unlocks.
 overridden() { # <slug>
   [ "${DW_OVERRIDE:-}" = "$1" ] && return 0
+  if [ -f "$override_file" ]; then
+    while IFS= read -r ov__line || [ -n "$ov__line" ]; do
+      ov__line=${ov__line%$'\r'}
+      if [ "$ov__line" = "$1" ]; then
+        rm -f "$override_file" 2>/dev/null
+        return 0
+      fi
+    done 2>/dev/null < "$override_file"
+  fi
   [ "$tool" = Bash ] || return 1
   ov__head=${subject#"${subject%%[![:space:]]*}"}     # anchor: leading blanks only
   ov__rest=${ov__head#DW_OVERRIDE=}
@@ -166,11 +206,24 @@ escape_hint() { # <slug>
   if [ "$tool" = Bash ]; then
     echo "  If this is genuinely the right call, rerun with the prefix: DW_OVERRIDE=$1 <your command>"
   else
-    echo "  If this is genuinely the right call, set DW_OVERRIDE=$1 in the environment of this session."
+    echo "  If this is genuinely the right call, arm the one-shot sentinel, then retry:"
+    echo "    mkdir -p $(dirname "$override_file") && printf '%s\\n' $1 >> $override_file"
+    echo "  It is consumed by the first block it unlocks. (DW_OVERRIDE=$1 also works, but only if it is already set in the environment of the Claude Code process — a tool call cannot set it.)"
   fi
 }
 
-json_escape() { awk '{ gsub(/\r/, ""); gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); printf "%s%s", (NR > 1 ? "\\n" : ""), $0 }'; }
+# Any character below 0x20 is illegal raw in a JSON string: one stray \007 in a
+# lesson used to make the whole level-2 payload unparseable, i.e. silently lost.
+json_escape() {
+  awk '
+    BEGIN { for (i = 1; i < 32; i++) if (i != 9 && i != 10 && i != 13) ctl[sprintf("%c", i)] = sprintf("\\u%04x", i) }
+    {
+      gsub(/\r/, ""); gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t")
+      out = ""; n = length($0)
+      for (i = 1; i <= n; i++) { c = substr($0, i, 1); out = out (c in ctl ? ctl[c] : c) }
+      printf "%s%s", (NR > 1 ? "\\n" : ""), out
+    }'
+}
 
 blocked=0
 bumps=""

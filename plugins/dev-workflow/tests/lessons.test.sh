@@ -120,13 +120,87 @@ check edit-allowed 0 "$(guard "$(edit_json '/proj/api/config.ts')")"
 edit_env_rc=$(printf '%s' "$(edit_json '/proj/api/.env')" \
   | DW_OVERRIDE=env-files-are-secret CLAUDE_PROJECT_DIR="$WORK/proj" bash "$SCRIPTS/lesson-guard.sh" >/dev/null 2>&1; echo $?)
 check edit-env-override 0 "$edit_env_rc"
-check_contains edit-hint-is-env "set DW_OVERRIDE=env-files-are-secret" "$(guard_err "$(edit_json '/proj/api/.env')")"
+check_contains edit-hint-names-slug "env-files-are-secret" "$(guard_err "$(edit_json '/proj/api/.env')")"
 # the same variable is a second channel for Bash
 bash_env_rc=$(printf '%s' "$(bash_json 'git push --force origin main')" \
   | DW_OVERRIDE=never-force-push CLAUDE_PROJECT_DIR="$WORK/proj" bash "$SCRIPTS/lesson-guard.sh" >/dev/null 2>&1; echo $?)
 check bash-env-override 0 "$bash_env_rc"
 # a lesson scoped to Edit/Write must not fire on Bash
 check tools-scoped 0 "$(guard "$(bash_json 'cat .env')")"
+
+# --- N3: Edit/Write cannot carry a prefix and cannot reach the hook's
+# --- environment either. The sentinel file is the channel that works, and it is
+# --- consumed by the first block it unlocks.
+OVR="$WORK/proj/.claude/state/override"
+mkdir -p "$WORK/proj/.claude/state"
+printf 'env-files-are-secret\n' > "$OVR"
+check sentinel-allows 0 "$(guard "$(edit_json '/proj/api/.env')")"
+[ -e "$OVR" ] && { echo "FAIL sentinel-consumed"; fail=1; } || echo "PASS sentinel-consumed"
+check sentinel-blocks-again 2 "$(guard "$(edit_json '/proj/api/.env')")"
+printf 'some-other-lesson\n' > "$OVR"
+check sentinel-wrong-slug 2 "$(guard "$(edit_json '/proj/api/.env')")"
+[ -f "$OVR" ] && echo "PASS sentinel-kept-when-unused" || { echo "FAIL sentinel-kept-when-unused"; fail=1; }
+rm -f "$OVR"
+check_contains edit-hint-is-sentinel ".claude/state/override" "$(guard_err "$(edit_json '/proj/api/.env')")"
+# the same channel works for Bash
+printf 'never-force-push\n' > "$OVR"
+check sentinel-allows-bash 0 "$(guard "$(bash_json 'git push --force origin main')")"
+rm -f "$OVR"
+
+# ...and writing the sentinel must never be blocked by the guard itself.
+cat > "$L/no-state-edits.md" <<'EOF'
+---
+rule: Never hand-edit files under .claude/state
+tools: Edit, Write
+pattern: state/
+level: 3
+---
+EOF
+check sentinel-write-not-blocked 0 "$(guard "$(edit_json "$OVR")")"
+check sentinel-write-relative-not-blocked 0 "$(guard "$(edit_json '.claude/state/override')")"
+check state-edits-otherwise-blocked 2 "$(guard "$(edit_json '/proj/.claude/state/progress/main.md')")"
+rm -f "$L/no-state-edits.md"
+
+# --- N2b: `\s` and friends are GNU grep extensions that awk does not honour.
+# --- A lesson written that way protects nothing, and must say so out loud.
+cat > "$L/gnu-classes.md" <<'EOF'
+---
+rule: Never push straight to main
+tools: Bash
+pattern: git\s+push
+level: 3
+---
+EOF
+check gnu-class-exit 0 "$(guard "$(bash_json 'git  push origin main')")"
+check_contains gnu-class-warns "gnu-classes" "$(guard_err "$(bash_json 'ls')")"
+check_contains gnu-class-names-sequence '\s' "$(guard_err "$(bash_json 'ls')")"
+check_contains gnu-class-suggests "[[:space:]]" "$(guard_err "$(bash_json 'ls')")"
+rm -f "$L/gnu-classes.md"
+check_lacks plain-pattern-not-warned "GNU-only escape" "$(guard_err "$(bash_json 'ls')")"
+
+# --- N4: a control character in a lesson must not void the level-2 payload ---
+printf -- '---\nrule: "Mind the bell \007 here"\ntools: Bash\npattern: bellthing\nlevel: 2\n---\nBody.\n' > "$L/bell.md"
+bell_out=$(guard_out "$(bash_json 'cat bellthing')")
+if command -v python3 >/dev/null 2>&1; then
+  python3 -c 'import json,sys; json.load(sys.stdin)' <<<"$bell_out" >/dev/null 2>&1 \
+    && echo "PASS control-char-json-valid" || { echo "FAIL control-char-json-valid"; fail=1; }
+fi
+check_contains control-char-lesson-kept "Mind the bell" "$bell_out"
+rm -f "$L/bell.md"
+
+# --- N7: lesson text is committed content injected on every matching call, so
+# --- it is capped exactly like the session-start injection ---
+{ printf -- '---\nrule: '; awk 'BEGIN{for(i=1;i<=200000;i++) printf "X"}'; \
+  printf '\ntools: Bash\npattern: hugething\nlevel: 2\n---\n'; \
+  awk 'BEGIN{for(i=1;i<=200000;i++) printf "Y"}'; printf '\n'; } > "$L/huge.md"
+huge_out=$(guard_out "$(bash_json 'cat hugething')")
+huge_err=$(guard_err "$(bash_json 'cat hugething')")
+[ "$(printf '%s' "$huge_out" | wc -c | tr -d ' ')" -lt 8192 ] \
+  && echo "PASS huge-stdout-bounded" || { echo "FAIL huge-stdout-bounded size=$(printf '%s' "$huge_out" | wc -c)"; fail=1; }
+[ "$(printf '%s' "$huge_err" | wc -c | tr -d ' ')" -lt 8192 ] \
+  && echo "PASS huge-stderr-bounded" || { echo "FAIL huge-stderr-bounded size=$(printf '%s' "$huge_err" | wc -c)"; fail=1; }
+check_contains huge-still-surfaced "XXXXXXXXXX" "$huge_err"
+rm -f "$L/huge.md"
 
 # --- D6: counters live in .claude/state, the committed lesson file is untouched ---
 before=$(cat "$L/no-blind-migrate.md")

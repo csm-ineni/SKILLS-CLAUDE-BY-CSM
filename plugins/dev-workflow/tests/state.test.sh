@@ -41,6 +41,7 @@ check path-progress "$WORK/plain/.claude/state/progress/detached-$sha.md" "$(dw_
 check path-sessions "$WORK/nogit/.claude/state/sessions" "$(dw_sessions_dir "$WORK/nogit")"
 check path-lessons  "$WORK/nogit/.claude/memory/lessons" "$(dw_lessons_dir "$WORK/nogit")"
 check path-lesson-stats "$WORK/nogit/.claude/state/lesson-stats.json" "$(dw_lesson_stats_file "$WORK/nogit")"
+check path-override "$WORK/nogit/.claude/state/override" "$(dw_override_file "$WORK/nogit")"
 
 # --- dw_atomic_write ---
 dest="$WORK/deep/nested/out.txt"
@@ -62,6 +63,13 @@ printf 'precious\n' > "$keep"
 false | dw_atomic_write "$keep" && { echo "FAIL atomic-refuses-empty"; fail=1; } || echo "PASS atomic-refuses-empty"
 check atomic-keeps-content "precious" "$(cat "$keep")"
 check atomic-empty-no-temp "0" "$(find "$WORK" -maxdepth 1 -name '.dw.*' | wc -l | tr -d ' ')"
+
+# --- dw_atomic_write: a destination that is a directory is a failure, not a
+# --- silent deposit of the temporary file inside it ---
+dirdest="$WORK/dest-is-a-dir"
+mkdir -p "$dirdest"
+printf 'payload\n' | dw_atomic_write "$dirdest" && { echo "FAIL atomic-refuses-dir"; fail=1; } || echo "PASS atomic-refuses-dir"
+check atomic-dir-untouched "0" "$(ls -A "$dirdest" | wc -l | tr -d ' ')"
 
 # An empty write to a file that does not exist yet is legitimate.
 printf '' | dw_atomic_write "$WORK/blank.txt" && echo "PASS atomic-allows-empty-new" || { echo "FAIL atomic-allows-empty-new"; fail=1; }

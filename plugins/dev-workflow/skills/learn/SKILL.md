@@ -37,7 +37,7 @@ Run it with --create-only, read the generated SQL, then apply.
 - `rule` — imperative, one line, the thing to do or avoid.
 - `why` — the incident that paid for it, dated. A rule without a cost is a preference; it will be ignored.
 - `tools` — `Bash`, `Edit`, `Write`, comma-separated. For `Bash` the pattern is matched against the command, for `Edit`/`Write` against the file path.
-- `pattern` — extended regex (`grep -E`), matched against the Bash command or the edited path. Make it narrow: a pattern that fires on innocent commands trains everyone to ignore lessons.
+- `pattern` — a **POSIX extended regular expression**, matched against the Bash command or the edited path. The guard matches with `awk`, so the GNU-only escapes `\s`, `\b`, `\w` and `\d` are *not* understood: `awk` reads them as the plain letter, and a pattern relying on them protects nothing. Use the POSIX classes instead — `[[:space:]]` for `\s`, `[[:alnum:]_]` for `\w`, `[0-9]` for `\d`; `\b` has no equivalent, anchor on the surrounding characters instead. The guard prints a warning on stderr when it sees one of those escapes in a pattern. Make the pattern narrow: one that fires on innocent commands trains everyone to ignore lessons.
 - `level` — see the ladder below.
 
 Write no counters here. `hits`, `overrides` and `last_hit` used to live in this frontmatter; the guard now keeps them in `.claude/state/lesson-stats.json` (local, gitignored), shaped `{"<slug>": {"hits": N, "overrides": N, "last_hit": "YYYY-MM-DD"}}`. Any such key left in a lesson file is inert — `.claude/memory/` is committed, and counters rewritten on every tool call would keep the tree dirty and turn every branch into a merge conflict.
@@ -58,12 +58,15 @@ A rule that has to be repeated is a rule that failed. Promoting to level 3 is ad
 
 ## Escape hatch and demotion
 
-Level 3 has two escape hatches, both naming the slug explicitly:
+Level 3 has three escape hatches, all naming the slug explicitly:
 
 | Tool | How |
 |---|---|
 | `Bash` | Prefix the command: `DW_OVERRIDE=<slug> <your command>`. The prefix must open the command — a `DW_OVERRIDE=` sitting in a trailing comment bypasses nothing. |
-| `Bash`, `Edit`, `Write` | Set `DW_OVERRIDE=<slug>` in the session environment. This is the only channel for `Edit`/`Write`: there is no command to prefix. |
+| `Bash`, `Edit`, `Write` | Arm the one-shot sentinel: `printf '%s\n' <slug> >> .claude/state/override`, then retry. The guard consumes the file — it deletes it — the first time it unlocks a block, so one write buys exactly one action. This is the channel for `Edit`/`Write`: there is no command to prefix there. |
+| `Bash`, `Edit`, `Write` | `DW_OVERRIDE=<slug>` in the environment **of the Claude Code process itself**, set before the session starts. Hooks are spawned by that process, never by the shell of a Bash tool call, so an `export` inside a session never reaches them. |
+
+Writing `.claude/state/override` is never blocked by the guard, whatever the lessons say: the way out must not be behind the wall it opens.
 
 Counters (levels 2 and 3 only; level 1 is never matched) live in `.claude/state/lesson-stats.json`: `hits` counts every surfacing and every block, `overrides` every bypass. Read them there — `cat .claude/state/lesson-stats.json` — never from a lesson file.
 

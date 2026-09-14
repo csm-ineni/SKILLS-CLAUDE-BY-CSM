@@ -28,8 +28,16 @@ mkdir -p "$sessions" 2>/dev/null || true
 DW_INJECT_MAX_LINES=200
 DW_INJECT_MAX_BYTES=8192
 DW_INJECT_MAX_COLS=160
+DW_STALE_MARGIN=60        # a commit made right after the write is not staleness
 
 untag() { LC_ALL=C sed -e 's#</*dev-workflow-context>#(dev-workflow tag removed)#g'; }
+
+# Branch names, and the cwd of another session, are as untrusted as file
+# contents: a refname may legally contain the closing tag. Everything printed
+# below goes through this.
+untag_str() { # <value>
+  printf '%s' "$1" | untag | LC_ALL=C cut -c1-"$DW_INJECT_MAX_COLS" | tr -d '\n'
+}
 
 emit_file() { # <file>
   head -c "$DW_INJECT_MAX_BYTES" "$1" 2>/dev/null | head -n "$DW_INJECT_MAX_LINES" | untag
@@ -61,7 +69,7 @@ for f in "$sessions"/*.json; do
     same_branch="$same_branch$b|$age|$(dw_json_get "$j" cwd)
 "
   else
-    other_branches="$other_branches$b "
+    other_branches="$other_branches$(untag_str "$b") "
   fi
 done
 
@@ -89,9 +97,9 @@ POLICY
 
 if [ -n "$same_branch" ]; then
   echo ""
-  echo "== WARNING: another session is active on this same branch ($branch) =="
+  echo "== WARNING: another session is active on this same branch ($(untag_str "$branch")) =="
   printf '%s' "$same_branch" | while IFS='|' read -r b age cwd; do
-    [ -n "$b" ] && echo "- started ${age}m ago in $cwd"
+    [ -n "$b" ] && echo "- started ${age}m ago in $(untag_str "$cwd")"
   done
   echo "Its progress file is the same as yours and may be overwritten. Coordinate, or move to your own branch."
 fi
@@ -122,14 +130,17 @@ if [ -n "$progress_shown" ] && git -C "$dir" rev-parse --git-dir >/dev/null 2>&1
   written=$(dw_file_mtime "$progress_shown") || written=""
   last_commit=$(git -C "$dir" log -1 --format=%ct 2>/dev/null)
   case "$last_commit" in ''|*[!0-9]*) last_commit="" ;; esac
-  if [ -n "$written" ] && [ -n "$last_commit" ] && [ "$last_commit" -gt "$written" ]; then
-    behind=$(git -C "$dir" rev-list --count --since="@$written" HEAD 2>/dev/null)
+  # The documented flow is "write the progress file, then commit": a commit made
+  # in the same breath is not staleness. --since is inclusive, so the second the
+  # file was written would otherwise count its own commit.
+  if [ -n "$written" ] && [ -n "$last_commit" ] && [ $((last_commit - written)) -gt "$DW_STALE_MARGIN" ]; then
+    behind=$(git -C "$dir" rev-list --count --since="@$((written + 1))" HEAD 2>/dev/null)
     case "$behind" in ''|0|*[!0-9]*) landed="commits have landed" ;; *) landed="$behind commit(s) have landed" ;; esac
     echo ""
     if [ "$progress_shown" = "$legacy" ]; then
       echo "== This progress file may be out of date: $landed since it was last written. .claude/PROGRESS.md is not tied to any branch, so it may describe other work entirely. Verify before resuming. =="
     else
-      echo "== This progress file may be out of date: $landed on $branch since it was last written. Verify before resuming. =="
+      echo "== This progress file may be out of date: $landed on $(untag_str "$branch") since it was last written. Verify before resuming. =="
     fi
   fi
 fi

@@ -19,8 +19,10 @@ project="${CLAUDE_PROJECT_DIR:-$PWD}"
 slug=$(dw_branch_slug "$project")
 
 # Heartbeat: keep this session's registry entry fresh so other sessions can see it.
+# The id comes from stdin: it is a path component here, so it goes through the
+# same guard as the two session hooks before anything is built from it.
 session_id=$(dw_json_get "$input" session_id 2>/dev/null)
-if [ -n "$session_id" ]; then
+if dw_safe_id "$session_id"; then
   entry="$(dw_sessions_dir "$project")/$session_id.json"
   if [ -f "$entry" ]; then
     now_iso=$(dw_now_iso); now_epoch=$(dw_now_epoch)
