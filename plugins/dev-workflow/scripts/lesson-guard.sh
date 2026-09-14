@@ -147,7 +147,9 @@ while IFS= read -r line; do
       ;;
     "G"*)
       IFS="$SEP" read -r _ _ gslug _ gpattern _ _ _ <<<"$line"
-      echo "dev-workflow: lesson '$gslug' pattern '${gpattern:0:$DW_INJECT_MAX_COLS}' uses a GNU-only escape (\\s, \\b, \\w, \\d); patterns are POSIX ERE here and those match a literal letter. Use [[:space:]], [[:alnum:]_] or [0-9] instead." >&2
+      # printf, not echo: some shells expand backslash escapes in echo, which would
+      # eat the very sequences this message is about (\b became a backspace).
+      printf '%s\n' "dev-workflow: lesson '$gslug' pattern '${gpattern:0:$DW_INJECT_MAX_COLS}' uses a GNU-only escape (\\s, \\b, \\w, \\d); patterns are POSIX ERE here and those match a literal letter. Use [[:space:]], [[:alnum:]_] or [0-9] instead." >&2
       ;;
   esac
 done <<<"$parsed"
