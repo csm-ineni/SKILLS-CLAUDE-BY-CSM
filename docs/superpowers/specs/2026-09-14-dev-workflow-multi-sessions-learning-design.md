@@ -49,8 +49,9 @@ Vérifiés contre la documentation officielle avant de s'en servir :
   `skills`, `memory`, `mcpServers`, `maxTurns`, `isolation`, `background`, `effort`, `hooks`,
   `disallowedTools`. **`color` n'est pas documenté** alors que `coder.md` l'utilise.
 
-`jq` n'est pas supposé installé : tout le parsing JSON se fait en `sed`/`grep`, comme le fait
-déjà `guard-commit.sh`.
+Parsing du JSON d'entrée : on reprend l'idiome déjà en place dans `guard-commit.sh` — `jq` s'il
+est présent, sinon `python3`, sinon `python`, et à défaut un avertissement sur stderr avec
+`exit 1` (non bloquant) plutôt qu'un échec silencieux.
 
 ## Architecture
 
@@ -104,9 +105,8 @@ une journée entière sans disparaître du registre. Toute autre entrée est pur
 ---
 rule: Ne jamais lancer les migrations Prisma sans --create-only sur la base de dev
 why: "2026-03-12 : perte du seed local, 40 min perdues"
-trigger:
-  tools: [Bash]
-  pattern: "prisma migrate"
+tools: Bash
+pattern: prisma migrate
 level: 2
 hits: 3
 overrides: 0
@@ -116,9 +116,11 @@ last_hit: 2026-09-02
 <corps : quoi faire à la place, et comment reconnaître la situation>
 ```
 
-`trigger.tools` liste les outils concernés (`Bash`, `Edit`, `Write`). `trigger.pattern` est une
-expression régulière étendue (`grep -E`) confrontée à la commande Bash, ou au chemin visé pour
-`Edit`/`Write`. Une leçon sans `trigger` reste au niveau 1 : indexée, jamais injectée.
+Le frontmatter est **plat** : du YAML imbriqué n'est pas parsable de façon fiable sans
+dépendance, et ce fichier est relu à chaque appel d'outil. `tools` liste les outils concernés,
+séparés par des virgules (`Bash`, `Edit`, `Write`). `pattern` est une expression régulière
+étendue (`grep -E`) confrontée à la commande Bash, ou au chemin visé pour `Edit`/`Write`. Une
+leçon sans `tools` ni `pattern` reste au niveau 1 : indexée, jamais injectée.
 
 ### Échelle d'escalade
 
@@ -143,7 +145,7 @@ réécrit dès que `overrides` atteint 3. La boucle se corrige elle-même.
 ### `scripts/lib/state.sh` (nouveau)
 
 Bibliothèque sourcée par les autres scripts. Fournit : lecture d'un champ scalaire du JSON stdin
-sans `jq` ; `dw_branch_slug` ; résolution des chemins (`dw_progress_file`, `dw_sessions_dir`,
+via jq/python ; `dw_branch_slug` ; résolution des chemins (`dw_progress_file`, `dw_sessions_dir`,
 `dw_lessons_dir`) ; écriture atomique (`tmp` dans le même répertoire puis `mv`) ; horodatage ISO
 8601 UTC ; test de vivacité d'une session. Aucune sortie sur stdout : ces fonctions ne doivent
 jamais polluer le contexte injecté.
