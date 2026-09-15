@@ -1,8 +1,8 @@
 {
   "name": "dev-workflow",
   "displayName": "Dev Workflow (CSM)",
-  "version": "0.3.0",
-  "description": "Persistent project memory, session handoff, coding rules, clean git workflow, and multi-model orchestration for Claude Code.",
+  "version": "0.4.0",
+  "description": "Persistent project memory, session handoff, lessons learned that block repeat mistakes, coding rules, clean git workflow, and multi-model orchestration for Claude Code.",
   "author": {
     "name": "CSM",
     "email": "elhadjiserignembacke@gmail.com"

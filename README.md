@@ -9,7 +9,9 @@ Améliore l'expérience de développement avec Claude Code :
 | Problème | Solution |
 |---|---|
 | Recherches dupliquées entre sessions | Skill `project-memory` — cache de recherches dans `.claude/memory/` (consulté avant, alimenté après chaque recherche) |
-| Perte de progression entre sessions | Skill `session-handoff` + hook SessionStart qui réinjecte `.claude/PROGRESS.md` au démarrage + hook PreCompact avant compaction |
+| Perte de progression entre sessions | Skill `session-handoff` + hook SessionStart qui réinjecte le fichier de progression de la branche courante + hook PreCompact avant compaction |
+| Deux sessions qui s'écrasent | Progression **scopée par branche** (`.claude/state/progress/<branch-slug>.md`) + registre des sessions vivantes qui prévient quand une autre session travaille sur la même branche |
+| Mêmes erreurs répétées | Skill `learn` + hook PreToolUse `lesson-guard.sh` — une leçon de niveau 2 est ressortie quand l'action correspond, une leçon de niveau 3 **bloque** l'action |
 | Règles de code non respectées | Skill `coding-rules` (SOLID, DRY, KISS, YAGNI en critères concrets), chargé automatiquement dès que du code s'écrit |
 | Mentions Claude/co-author dans les commits | Triple garde : setting `attribution` vide + instruction dans `feature-workflow` + hook PreToolUse qui **bloque** toute commande `git commit`/`gh pr` contenant une attribution |
 | Workflow git non structuré | Skill `feature-workflow` — branche dédiée `feat/...`, Conventional Commits, draft PR dès le premier commit, ready seulement après revue |
@@ -50,27 +52,71 @@ Dans chaque projet où tu veux le workflow :
 /dev-workflow:setup
 ```
 
-Crée `.claude/memory/` + `.claude/PROGRESS.md`, applique le setting `attribution` global, vérifie `gh auth`.
+Crée `.claude/memory/` (research, decisions, lessons) et `.claude/state/` (progression par branche, registre des sessions), migre un éventuel `.claude/PROGRESS.md`, gitignore `.claude/state/`, applique le setting `attribution` global, vérifie `gh auth`.
+
+## Les trois mémoires
+
+| Chemin | Contenu | Écrit par | Versionné |
+|---|---|---|---|
+| `.claude/memory/research/` | Faits : comportement d'une lib, forme d'une API, comment ce dépôt fait X | skill `project-memory` | oui |
+| `.claude/memory/decisions.md` | Choix d'architecture et leur raison | skill `project-memory` | oui |
+| `.claude/memory/lessons/` | Erreurs déjà payées, avec un déclencheur qui avertit ou bloque | skill `learn` | oui |
+| `.claude/state/progress/<branch-slug>.md` | Où en est le travail **sur cette branche** | skill `session-handoff` | non (gitignoré) |
+| `.claude/state/sessions/<session-id>.json` | Sessions Claude Code vivantes (pid, branche, cwd) | hooks | non (gitignoré) |
+| `.claude/state/lesson-stats.json` | Compteurs des leçons (`hits`, `overrides`, `last_hit`) | hook `lesson-guard.sh` | non (gitignoré) |
+
+`.claude/memory/INDEX.md` est **généré** par `plugins/dev-workflow/scripts/memory-index.sh` à partir du frontmatter des entrées — ne jamais l'éditer à la main (deux sessions concurrentes s'y écrasent).
+
+## État par branche et registre des sessions
+
+Le fichier de progression porte le slug de la branche courante (`/` et caractères exotiques remplacés par `-`) : deux fonctionnalités en parallèle ne se marchent plus dessus. Au démarrage, le hook SessionStart :
+
+- purge les sessions mortes (le pid ne répond plus), enregistre la session courante ;
+- **avertit** si une autre session vivante travaille sur la même branche (elle avertit, elle ne verrouille pas), et signale en une ligne les sessions sur d'autres branches ;
+- injecte la progression de la branche, l'index mémoire et les titres des leçons actives ;
+- signale la **péremption** : des commits ont atterri sur la branche après la **date de modification** du fichier de progression (comparaison de mtime, pas de lecture de prose — la ligne `**Updated:**` du fichier reste là pour le lecteur humain et ne pilote rien).
+
+Ce que le hook injecte vient de `.claude/memory/`, qui est **committé** : un clone ou un merge suffirait à y planter du texte. Chaque fichier injecté est donc plafonné (200 lignes / 8 Ko, troncature annoncée), les titres de leçons coupés à 160 colonnes, et toute ligne contenant une balise `<dev-workflow-context>` est neutralisée pour qu'aucun contenu ne puisse sortir du bloc de contexte — y compris le nom de branche et le répertoire d'une autre session, un refname pouvant légalement contenir cette balise. Le hook de leçons applique les mêmes plafonds au texte qu'il ressort (`rule`, `why`, corps).
+
+`UserPromptSubmit` rafraîchit l'entrée de la session (heartbeat), `SessionEnd` la supprime.
+
+## Leçons : trois niveaux
+
+Une leçon est un fichier `.claude/memory/lessons/<slug>.md` au frontmatter plat (`rule`, `why`, `tools`, `pattern`, `level`). Les compteurs ne sont pas dans la leçon : le hook les tient dans `.claude/state/lesson-stats.json`, local et gitignoré — `.claude/memory/` étant committé, des compteurs réécrits à chaque appel d'outil y saliraient `git status` et provoqueraient des conflits de merge.
+
+| Niveau | Effet | Quand |
+|---|---|---|
+| 1 | Titre listé au démarrage de session | Première rédaction, ou pas de `pattern`/`tools` fiable |
+| 2 | Leçon complète ressortie quand le `pattern` correspond à la commande Bash ou au chemin édité | Deuxième occurrence |
+| 3 | Action **bloquée** (`exit 2`), échappatoire affichée | Troisième occurrence, ou erreur coûteuse dès le départ |
+
+Le niveau 2 sort en `0` : la leçon part sur stdout en JSON (`hookSpecificOutput.additionalContext`, plus un `systemMessage`), avec une copie lisible sur stderr pour le débogage. Seule la forme de ce JSON est vérifiée par les tests ; que ce texte atteigne effectivement le modèle en session réelle n'est pas encore confirmé. Le niveau 3, lui, sort en `2` et son message sur stderr est le canal documenté vers le modèle.
+
+Le `pattern` est une **regex étendue POSIX** matchée par `awk` : les échappements GNU `\s`, `\b`, `\w`, `\d` n'y sont pas interprétés (utiliser `[[:space:]]`, `[[:alnum:]_]`, `[0-9]`) — le hook avertit sur stderr quand il en voit un.
+
+Échappatoire pour le niveau 3, trois canaux : préfixer la commande Bash de `DW_OVERRIDE=<slug>` (le préfixe doit **ouvrir** la commande — un `DW_OVERRIDE=` en commentaire de fin de ligne ne contourne rien) ; armer la sentinelle à usage unique `printf '%s\n' <slug> >> .claude/state/override`, que le hook consomme (il supprime le fichier) au premier déblocage — c'est le canal utilisable pour `Edit`/`Write`, faute de commande à préfixer, et son écriture n'est jamais bloquée par le garde-fou ; ou poser `DW_OVERRIDE=<slug>` dans l'environnement du process Claude Code lui-même, avant le démarrage de la session, puisqu'un `export` lancé dans un appel Bash n'atteint jamais un hook. Chaque contournement incrémente `overrides` dans `.claude/state/lesson-stats.json` — au-delà de 3, la leçon est mauvaise : rétrécir le `pattern`, la scinder, ou la rétrograder en niveau 2. Une leçon non déclenchée depuis six mois part dans `.claude/memory/lessons/archive/` (plus listée, plus matchée) ; penser alors à retirer son slug de `lesson-stats.json`, que rien ne purge.
 
 ## Utilisation quotidienne
 
-- **Reprise de session** : automatique — le hook SessionStart injecte PROGRESS.md et l'index mémoire.
+- **Reprise de session** : automatique — le hook SessionStart injecte la progression de la branche, l'index mémoire et les leçons actives.
 - **Fin de session / jalon** : dis « handoff » ou laisse Claude déclencher `session-handoff`.
 - **Nouvelle fonctionnalité** : demande la fonctionnalité ; `feature-workflow` impose branche + draft PR.
 - **Grosse exploration/recherche** : `orchestrate` délègue à `researcher` (Haiku) pour préserver le contexte.
 - **Changement UI / flux utilisateur** : l'agent `browser-tester` (Sonnet) écrit et lance les tests Playwright, en plus des tests unitaires.
-- **Avant de passer une PR en ready** : l'agent `reviewer` fait une revue adversariale.
+- **Avant de passer une PR en ready** : l'agent `reviewer` fait une revue adversariale, leçons comprises.
+- **Même erreur deux fois** : dis « on l'a déjà eue » ou laisse Claude déclencher `learn` — la leçon est écrite, puis appliquée par le hook.
 
 ## Structure
 
 ```
 plugins/dev-workflow/
 ├── .claude-plugin/plugin.json
-├── skills/          # setup, project-memory, session-handoff, coding-rules, feature-workflow, orchestrate
+├── skills/          # setup, project-memory, session-handoff, learn, coding-rules, feature-workflow, orchestrate
 ├── agents/          # researcher (haiku), coder (opus), reviewer (opus), browser-tester (sonnet)
-├── hooks/hooks.json # SessionStart, UserPromptSubmit, PreToolUse (garde commit), PreCompact
-├── scripts/         # session-context.sh, prompt-reminder.sh, guard-commit.sh, precompact-reminder.sh
-└── tests/           # hooks.test.sh — golden-input tests des scripts de hooks
+├── hooks/hooks.json # SessionStart, SessionEnd, UserPromptSubmit, PreToolUse (garde commit + garde leçons), PreCompact
+├── scripts/         # lib/state.sh, session-context.sh, session-end.sh, prompt-reminder.sh,
+│                    # precompact-reminder.sh, guard-commit.sh, lesson-guard.sh, memory-index.sh
+└── tests/           # run.sh — golden-input tests de state, session, hooks, lessons, memory
 ```
 
 ## Désinstallation
